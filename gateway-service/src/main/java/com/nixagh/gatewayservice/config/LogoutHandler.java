@@ -1,9 +1,7 @@
 package com.nixagh.gatewayservice.config;
 
 import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.JwtException;
 import lombok.RequiredArgsConstructor;
-import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.cloud.gateway.filter.GatewayFilter;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.http.HttpStatus;
@@ -14,12 +12,12 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
-@RefreshScope
 @Component
 @RequiredArgsConstructor
-public class AuthenticationFilter implements GatewayFilter {
+public class LogoutHandler implements GatewayFilter {
+    private final JwtUtil jwtUtil;
     private final RouterValidator routerValidator;
-    private final TokenUtil tokenUtil;
+    private final RestTemplate restTemplate;
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
@@ -27,24 +25,13 @@ public class AuthenticationFilter implements GatewayFilter {
 
         if(!routerValidator.isSecured.test(request)) return chain.filter(exchange);
 
-        if (tokenUtil.isAuthMissing(request))
+        if (this.isAuthMissing(request))
             return this.onError(exchange, "Authorization header is missing in request", HttpStatus.UNAUTHORIZED);
 
-        final String token = tokenUtil.getToken(request);
+        final String token = this.getToken(request);
 
-        // check token in database
-//        if(!tokenUtil.isWhiteList(token))
-//            return this.onError(exchange, "Authorization header is invalid", HttpStatus.UNAUTHORIZED);
+        //Black list token
 
-        // check validateToken
-        try {
-            if (!tokenUtil.isValid(token))
-                return this.onError(exchange, "Authorization header is invalid", HttpStatus.UNAUTHORIZED);
-        } catch (JwtException e) {
-            return this.onError(exchange, "Authorization header is invalid", HttpStatus.UNAUTHORIZED);
-        }
-
-        tokenUtil.populateRequestWithHeaders(exchange, token);
 
         return chain.filter(exchange);
     }
@@ -57,4 +44,23 @@ public class AuthenticationFilter implements GatewayFilter {
         return response.setComplete();
     }
 
+    private String getAuthHeader(ServerHttpRequest request) {
+        return request.getHeaders().getOrEmpty("Authorization").get(0);
+    }
+
+    private String getToken(ServerHttpRequest request) {
+        return getAuthHeader(request).replace("Bearer ", "");
+    }
+
+    private boolean isAuthMissing(ServerHttpRequest request) {
+        return !request.getHeaders().containsKey("Authorization");
+    }
+
+    private void populateRequestWithHeaders(ServerWebExchange exchange, String token) {
+        Claims claims = jwtUtil.getAllClaimsFromToken(token);
+        exchange.getRequest().mutate()
+                .header("id", String.valueOf(claims.get("id")))
+                .header("role", String.valueOf(claims.get("role")))
+                .build();
+    }
 }

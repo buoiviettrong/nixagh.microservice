@@ -1,10 +1,6 @@
 package com.nixagh.authservice.service;
 
-import com.nixagh.authservice.entity.AuthRequest;
-import com.nixagh.authservice.entity.RegisterRequest;
-import com.nixagh.authservice.entity.AuthResponse;
-import com.nixagh.authservice.entity.UserDTO;
-import io.jsonwebtoken.lang.Assert;
+import com.nixagh.authservice.entity.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.bcrypt.BCrypt;
@@ -17,6 +13,7 @@ import java.util.List;
 @Service
 public class AuthService {
     private final String userServiceURL = "http://localhost:8762/users";
+    private final String tokenServiceURL = "http://localhost:8762/tokens";
     private final RestTemplate restTemplate;
     private final JwtUtil jwt;
 
@@ -35,17 +32,12 @@ public class AuthService {
         authRequest.setPassword(BCrypt.hashpw(authRequest.getPassword(), BCrypt.gensalt(12)));
 
         UserDTO userDTO = restTemplate.postForObject(userServiceURL, authRequest, UserDTO.class);
-
         if(userDTO == null) {
             errorMessage.add("Email already exist!");
             return new AuthResponse(errorMessage, null, null);
         }
 
-        String accessToken = jwt.generate(userDTO, "ACCESS");
-        String refreshToken = jwt.generate(userDTO, "REFRESH");
-
-        return new AuthResponse(null, accessToken, refreshToken);
-
+        return generateToken(userDTO);
     }
 
     public AuthResponse authenticate(AuthRequest authRequest) {
@@ -61,9 +53,24 @@ public class AuthService {
 
         if(errorMessage.size() > 0) return new AuthResponse(errorMessage, null, null);
 
+        return generateToken(userDTO);
+    }
+
+    private AuthResponse generateToken(UserDTO userDTO) {
         String accessToken = jwt.generate(userDTO, "ACCESS");
         String refreshToken = jwt.generate(userDTO, "REFRESH");
 
-        return new AuthResponse(null ,accessToken, refreshToken);
+        RequestToken requestToken = RequestToken.builder()
+                .user_id(userDTO.getUser_id())
+                .accessToken(accessToken)
+                .refreshToken(refreshToken)
+                .build();
+        String token_id = restTemplate.postForObject(tokenServiceURL + "/save", requestToken, String.class);
+
+        return new AuthResponse(null, accessToken, refreshToken);
+    }
+
+    public void logout(String token) {
+        String token_id = restTemplate.postForObject(tokenServiceURL + "/block", token, String.class);
     }
 }

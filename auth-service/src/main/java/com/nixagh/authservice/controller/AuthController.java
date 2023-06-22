@@ -29,4 +29,12 @@ public class AuthController {
     public ResponseEntity<AuthResponse> authenticate(@RequestBody AuthRequest authRequest) {
         return ResponseEntity.ok(authService.authenticate(authRequest));
     }
+
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout(@RequestBody logoutToken token) {
+        authService.logout(token.token);
+        return ResponseEntity.ok().build();
+    }
+
+    private record logoutToken(String token) {}
 }
